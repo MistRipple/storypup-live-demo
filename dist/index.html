@@ -124,6 +124,10 @@
     }
     .story-scene.page-2 { background: linear-gradient(180deg, #f3bc8e 0%, #ffe6bd 45%, #e8b066 46%, #bc7c4c 100%); }
     .story-scene.page-3 { background: linear-gradient(180deg, #2f4f68 0%, #748ca1 47%, #536d58 48%, #24463e 100%); }
+    .story-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .6s ease; z-index:1; }
+    .story-art.show { opacity:1; }
+    .story-vignette { position:absolute; inset:0; z-index:2; pointer-events:none; background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(24,53,47,.02) 60%, rgba(24,53,47,.16)); }
+    .live-chip { display:inline-flex; align-items:center; gap:7px; padding:6px 9px; margin-left:8px; background:#e8f6ed; color:#1f6f4d; border-radius:999px; font-size:10px; letter-spacing:.06em; }
     .sun { position: absolute; top: 34px; right: 54px; width: 76px; height: 76px; border-radius: 50%; background: #ffe79a; box-shadow: 0 0 0 18px rgba(255,231,154,.22); }
     .hill { position: absolute; bottom: -72px; border-radius: 50% 50% 0 0; background: #73a75d; opacity: .95; }
     .hill.one { width: 70%; height: 250px; left: -15%; }
@@ -134,7 +138,7 @@
     .tree::after { width: 78px; height: 72px; left: -24px; top: -96px; background: #528a56; }
     .tree.a { left: 9%; transform: scale(.8); }
     .tree.b { right: 11%; transform: scale(.95); }
-    .characters { position: absolute; inset: auto 0 56px; display: flex; justify-content: center; align-items: end; gap: 36px; }
+    .characters { position: absolute; inset: auto 0 56px; z-index:3; display: flex; justify-content: center; align-items: end; gap: 36px; }
     .character {
       width: 124px; height: 124px; display: grid; place-items: center; font-size: 82px;
       filter: drop-shadow(0 15px 16px rgba(35,65,48,.25));
@@ -145,7 +149,7 @@
     @keyframes breathe { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-7px) rotate(1deg); } }
     @keyframes pop { from { transform: scale(.5) translateY(28px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
     .scene-caption {
-      position: absolute; left: 22px; bottom: 18px; padding: 9px 13px;
+      position: absolute; z-index:4; left: 22px; bottom: 18px; padding: 9px 13px;
       background: rgba(255,250,241,.88); border: 1px solid rgba(255,255,255,.75);
       border-radius: 12px; color: var(--ink); font-size: 12px; font-weight: 800; backdrop-filter: blur(10px);
     }
@@ -285,18 +289,20 @@
             <div class="section-label">Try the story engine</div>
             <h2>选择你的救援搭档</h2>
           </div>
-          <p class="section-copy">这是一个可点击的交互原型：先选角色，再选解决办法。每次选择都会生成新的剧情结果，模拟 StoryPup 的分支叙事体验。</p>
+          <p class="section-copy">这不是静态假页面：先选角色，再选解决办法，随后由在线语言与图像模型实时生成下一页。每次点击都会产生新的故事结果。</p>
         </div>
 
         <div class="demo-stage">
           <div class="story-book" aria-live="polite">
             <div class="story-topbar">
-              <span class="chapter" id="chapterLabel">第 1 页 · 草莓果冻泥潭</span>
+              <span class="chapter" id="chapterLabel">第 1 页 · 草莓果冻泥潭 <span class="live-chip">LIVE AI</span></span>
               <div class="progress" aria-label="故事进度">
                 <i class="active"></i><i id="progress2"></i><i id="progress3"></i>
               </div>
             </div>
             <div class="story-scene" id="storyScene">
+              <img class="story-art" id="storyArt" alt="AI 生成的 StoryPup 故事插画" />
+              <div class="story-vignette"></div>
               <div class="sun"></div>
               <div class="cloud c1"></div>
               <div class="cloud c2"></div>
@@ -322,7 +328,7 @@
                 <button class="choice" data-character="otter"><span class="emoji">🦦</span><span>小海獭</span></button>
                 <button class="choice" data-character="fox"><span class="emoji">🦊</span><span>小狐狸</span></button>
               </div>
-              <div class="story-loading" id="storyLoading"><span class="spinner"></span><span>StoryPup 正在把这个想法画进故事里…</span></div>
+              <div class="story-loading" id="storyLoading"><span class="spinner"></span><span>正在连接在线故事模型并生成新页面…</span></div>
             </div>
           </div>
 
@@ -341,7 +347,7 @@
             </div>
           </aside>
         </div>
-        <p class="demo-note">交互原型：故事文本与页面变化由前端 mock 驱动，用于演示 StoryPup 的分支共创流程。</p>
+        <p class="demo-note">在线原型：借助 Pollinations 文生文与文生图模型实时生成。若服务不可用，页面会自动回退到本地故事模板。</p>
       </div>
     </section>
 
@@ -423,6 +429,7 @@
     const expressionStat = document.querySelector("#expressionStat");
     const branchStat = document.querySelector("#branchStat");
     const loading = document.querySelector("#storyLoading");
+    const storyArt = document.querySelector("#storyArt");
 
     function renderChoices(items, type) {
       choiceGrid.innerHTML = "";
@@ -463,41 +470,64 @@
       window.setTimeout(() => document.querySelector("[data-character]")?.classList.remove("selected"), 650);
     }
 
-    function chooseSolution(solutionId) {
+    async function chooseSolution(solutionId) {
       const character = copy[state.character];
       const solution = character.options.find(option => option.id === solutionId);
       state.solution = solutionId;
       state.step = 3;
       document.querySelector(`[data-solution="${solutionId}"]`).classList.add("selected");
       setLoading(true);
-      storyKicker.textContent = "StoryPup 正在生成下一页";
+      storyKicker.textContent = "在线故事模型正在工作";
       storyTitle.textContent = "把想法变成画面…";
       storyText.textContent = `${character.name}准备${solution.label}。小兔子屏住呼吸，果冻泥潭冒出一个又一个小泡泡。`;
-      window.setTimeout(() => {
-        setLoading(false);
-        scene.classList.add("page-2");
-        chapterLabel.textContent = "第 2 页 · 一个聪明的办法";
-        sceneCaption.textContent = "地点：彩虹森林 · 状态：救援成功，故事继续";
-        storyKicker.textContent = "这一页由孩子的选择生成";
-        storyTitle.textContent = `${solution.label}，成功！`;
-        storyText.textContent = `${character.name}带着小兔子跳出了果冻泥潭。小兔子抖抖耳朵说：“原来遇到难题，不只要勇敢，还要会想办法！”`;
-        buddyBubble.textContent = "下一页可以让孩子继续补充：泥潭里为什么会有果冻？把故事交还给孩子。";
-        buddyCharacter.textContent = "🎉";
-        expressionStat.textContent = "完成一次表达";
-        branchStat.textContent = solution.label;
-        choiceLabel.textContent = "还想再试一个不同的分支吗？";
-        choiceGrid.innerHTML = `<button class="choice" id="replayBtn"><span class="emoji">↻</span><span>重新共创一页</span></button>`;
-        document.querySelector("#progress3").classList.add("active");
-        document.querySelector("#replayBtn").addEventListener("click", resetStory);
-      }, 950);
-    }
 
+      const prompt = `你是一台面向3-8岁儿童的AI绘本机。请续写一页中文儿童绘本：角色是${character.name}，它要${solution.label}，救出掉进草莓果冻泥潭的小兔子。要求温暖、有画面感、没有危险内容，不超过80个汉字，只输出一段正文，不要标题。`;
+      const fallback = `${character.name}带着小兔子跳出了果冻泥潭。小兔子抖抖耳朵说：“原来遇到难题，不只要勇敢，还要会想办法！”`;
+
+      let generatedText = fallback;
+      try {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 22000);
+        const response = await fetch(`https://text.pollinations.ai/${encodeURIComponent(prompt)}`, { signal: controller.signal });
+        window.clearTimeout(timeout);
+        if (response.ok) {
+          const text = (await response.text()).trim();
+          if (text.length > 10) generatedText = text.replace(/^["“]|["”]$/g, "").slice(0, 180);
+        }
+      } catch (error) {
+        generatedText = fallback;
+      }
+
+      const imagePrompt = `children picture book illustration, warm gouache, ${character.name === "小恐龙" ? "a friendly green dinosaur" : character.name === "小海獭" ? "a playful little otter" : "a clever little fox"} helping a small rabbit escape a strawberry jelly mud puddle, rainbow forest, no text, expressive, safe for young children`;
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=1024&height=600&nologo=true&seed=${Date.now() % 100000}`;
+
+      scene.classList.add("page-2");
+      storyArt.onload = () => storyArt.classList.add("show");
+      storyArt.onerror = () => storyArt.classList.remove("show");
+      storyArt.src = imageUrl;
+      setLoading(false);
+      chapterLabel.innerHTML = '第 2 页 · 一个聪明的办法 <span class="live-chip">LIVE AI</span>';
+      sceneCaption.textContent = "地点：彩虹森林 · 状态：救援成功，故事继续";
+      storyKicker.textContent = "这一页由在线 AI 根据孩子的选择生成";
+      storyTitle.textContent = `${solution.label}，成功！`;
+      storyText.textContent = generatedText;
+      buddyBubble.textContent = "下一页可以让孩子继续补充：泥潭里为什么会有果冻？把故事交还给孩子。";
+      buddyCharacter.textContent = "🎉";
+      expressionStat.textContent = "完成一次表达";
+      branchStat.textContent = solution.label;
+      choiceLabel.textContent = "还想再试一个不同的分支吗？";
+      choiceGrid.innerHTML = `<button class="choice" id="replayBtn"><span class="emoji">↻</span><span>重新共创一页</span></button>`;
+      document.querySelector("#progress3").classList.add("active");
+      document.querySelector("#replayBtn").addEventListener("click", resetStory);
+    }
     function resetStory() {
       state.character = null;
       state.solution = null;
       state.step = 1;
       scene.classList.remove("page-2", "page-3");
-      chapterLabel.textContent = "第 1 页 · 草莓果冻泥潭";
+      storyArt.classList.remove("show");
+      storyArt.removeAttribute("src");
+      chapterLabel.innerHTML = '第 1 页 · 草莓果冻泥潭 <span class="live-chip">LIVE AI</span>';
       sceneCaption.textContent = "地点：彩虹森林 · 危机：小兔子被困住了";
       storyKicker.textContent = "故事停在这里，等你做决定";
       storyTitle.textContent = "“谁来帮帮我？”";
